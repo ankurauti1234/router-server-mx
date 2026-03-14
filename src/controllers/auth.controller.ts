@@ -55,10 +55,30 @@ export const login = async (req: Request, res: Response) => {
         { expiresIn: process.env.JWT_EXPIRES_IN ?? '1h' } as SignOptions
     );
 
-    res.json({ token });
+    const isProduction = process.env.NODE_ENV === "production";
+
+    res.cookie("auth-session", token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      path: "/",
+      maxAge: 60 * 60 * 1000
+    });
+
+    res.json({ success: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+export const logout = (req: Request, res: Response) => {
+  res.clearCookie("auth-session", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "none",
+    path: "/"
+  });
+
+  res.json({ success: true });
+};

@@ -3,12 +3,17 @@ import cors from "cors";
 import { initializeDataSource } from "./config/dataSource.js";
 import authRouter from "./routes/auth.routes.js";
 import routerEventRoutes from "./routes/routerEvent.routes.js";
+import cookieParser from 'cookie-parser'
 
 const app = express();
+app.use(cookieParser());
 
 app.use(
   cors({
-    origin: "http://localhost:3000",          // ← your frontend URL
+    origin: [
+      "http://localhost:3000",
+      "https://router-mexico.indirex.io"
+    ],          // ← your frontend URL
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // usually enough
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,                        // if you use cookies / auth later

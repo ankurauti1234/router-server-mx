@@ -42,10 +42,15 @@ import { ViewEntity, ViewColumn } from "typeorm";
       AND e0.event_type_id = (SELECT id FROM event_types WHERE code = 0)
       AND e0.timestamp > e10.timestamp
 
-    LEFT JOIN router_events e30
-      ON  e30.router_id = e10.router_id
-      AND e30.event_type_id = (SELECT id FROM event_types WHERE code = 30)
-
+    LEFT JOIN LATERAL (
+      SELECT *
+      FROM router_events e30_sub
+      WHERE e30_sub.router_id = e10.router_id
+        AND e30_sub.event_type_id = (SELECT id FROM event_types WHERE code = 30)
+      ORDER BY e30_sub.timestamp DESC
+      LIMIT 1
+    ) e30 ON true
+    
     LEFT JOIN LATERAL (
       SELECT idx
       FROM generate_series(
