@@ -12,17 +12,25 @@ import { ViewEntity, ViewColumn } from "typeorm";
       e10.event_type_id                                          AS type_id,
 
       -- From type 10
-      COALESCE(
-        e0.details -> 'device_details' ->> 'event',
-        e10.details -> 'device_details' ->> 'event'
-      )                AS event,
+      CASE
+        WHEN e10.event_type_id = (SELECT id FROM event_types WHERE code = 0)
+          THEN 'disconnected'
+        WHEN e10.event_type_id IN (
+            SELECT id FROM event_types WHERE code IN (1,10)
+        )
+          THEN 'connected'
+      END AS event,
       
       e10.details -> 'device_details' ->> 'hostname'             AS hostname,
       e10.details -> 'domain_activity' ->> 'platform'            AS platform,
       e10.details -> 'domain_activity' ->> 'category'            AS category,
 
       -- From matched type 0 (later disconnect)
-      (e0.details -> 'device_details' ->> 'connected_duration_sec')::integer  AS duration_sec,
+      CASE
+        WHEN e10.event_type_id = (SELECT id FROM event_types WHERE code = 0)
+        THEN (e10.details -> 'device_details' ->> 'connected_duration_sec')::integer
+        ELSE NULL
+      END AS duration_sec,
 
       -- From type 30 + matched index
       e30.details -> 'member_details' -> matched_member.idx ->> 'member_code'   AS member,
@@ -62,7 +70,9 @@ import { ViewEntity, ViewColumn } from "typeorm";
       LIMIT 1
     ) matched_member ON true
 
-    WHERE e10.event_type_id = (SELECT id FROM event_types WHERE code = 10)
+    WHERE e10.event_type_id IN (
+      SELECT id FROM event_types WHERE code IN (0,1,10)
+    )
 
     ORDER BY e10.timestamp DESC
   `
