@@ -2,90 +2,88 @@ import { ViewEntity, ViewColumn } from "typeorm";
 
 @ViewEntity({
   name: "router_events_report",
-  materialized: false,   // ← consider true + periodic refresh later
+  materialized: false,
   expression: `
     SELECT
-      e10.id                                                     AS event_id,
-      r.router_serial                                            AS router_id,
-      h.hh_id                                                    AS hhid,
-      to_timestamp(e10.timestamp)                                AS timestamp,
-      e10.event_type_id                                          AS type_id,
+      e.id                                                          AS event_id,
+      r.router_serial                                               AS router_id,
+      h.hh_id                                                       AS hhid,
+      to_timestamp(e.timestamp)                                     AS timestamp,
+      e.event_type_id                                               AS type_id,
 
-      -- From type 10
-      CASE
-        WHEN e10.event_type_id = (SELECT id FROM event_types WHERE code = 0)
-          THEN 'disconnected'
-        WHEN e10.event_type_id IN (
-            SELECT id FROM event_types WHERE code IN (1,10)
-        )
-          THEN 'connected'
-      END AS event,
-      
-      e10.details -> 'device_details' ->> 'hostname'             AS hostname,
-      e10.details -> 'domain_activity' ->> 'platform'            AS platform,
-      e10.details -> 'domain_activity' ->> 'category'            AS category,
+      CASE et.code
+        WHEN 0  THEN 'disconnected'
+        WHEN 1  THEN 'connected'
+        WHEN 10 THEN 'connected'
+      END                                                           AS event,
 
-      -- From matched type 0 (later disconnect)
-      CASE
-        WHEN e10.event_type_id = (SELECT id FROM event_types WHERE code = 0)
-        THEN (e10.details -> 'device_details' ->> 'connected_duration_sec')::integer
+      e.details -> 'device_details' ->> 'hostname'                 AS hostname,
+      e.details -> 'domain_activity' ->> 'platform'                AS platform,
+      e.details -> 'domain_activity' ->> 'category'                AS category,
+
+      CASE WHEN et.code = 0
+        THEN (e.details -> 'device_details' ->> 'connected_duration_sec')::integer
         ELSE NULL
-      END AS duration_sec,
+      END                                                           AS duration_sec,
 
-      -- From type 30 + matched index
-      e30.details -> 'member_details' -> matched_member.idx ->> 'member_code'   AS member,
-      e30.details -> 'member_details' -> matched_member.idx ->> 'device_type'   AS device_type
+      reg.member_codes                                              AS member,
+      reg.device_types                                              AS device_type
 
-    FROM router_events e10
+    FROM router_events e
 
-    JOIN routers r 
-      ON r.id = e10.router_id
+    JOIN event_types et
+      ON et.id = e.event_type_id
+     AND et.code IN (0, 1, 10)
 
-    JOIN households h 
+    JOIN routers r
+      ON r.id = e.router_id
+
+    LEFT JOIN households h
       ON h.id = r.household_id
 
-    LEFT JOIN router_events e0
-      ON  e0.router_id = e10.router_id
-      AND e0.details -> 'device_details' ->> 'mac' = e10.details -> 'device_details' ->> 'mac'
-      AND e0.event_type_id = (SELECT id FROM event_types WHERE code = 0)
-      AND e0.timestamp > e10.timestamp
-
     LEFT JOIN LATERAL (
-      SELECT *
-      FROM router_events e30_sub
-      WHERE e30_sub.router_id = e10.router_id
-        AND e30_sub.event_type_id = (SELECT id FROM event_types WHERE code = 30)
-      ORDER BY e30_sub.timestamp DESC
-      LIMIT 1
-    ) e30 ON true
-    
-    LEFT JOIN LATERAL (
-      SELECT idx
-      FROM generate_series(
-        0,
-        jsonb_array_length(e30.details -> 'member_details') - 1
-      ) AS idx
-      WHERE e30.details -> 'member_details' -> idx ->> 'mac'
-          = e10.details -> 'device_details' ->> 'mac'
-      LIMIT 1
-    ) matched_member ON true
 
-    WHERE e10.event_type_id IN (
-      SELECT id FROM event_types WHERE code IN (0,1,10)
-    )
+      SELECT
+        STRING_AGG(m.member_code, ', ' ORDER BY m.member_code)     AS member_codes,
+        STRING_AGG(dt.name,       ', ' ORDER BY m.member_code)     AS device_types
+      FROM member_registration mr
+      JOIN members m
+        ON m.id = mr.member_id
+      JOIN member_devices md
+        ON md.member_id = m.id
+       AND md.router_id = e.router_id
+      JOIN device_types dt
+        ON dt.id = md.device_type_id
+      WHERE mr.router_id = e.router_id
+        AND mr.registered_at <= to_timestamp(e.timestamp)
 
-    ORDER BY e10.timestamp DESC
+      UNION ALL
+
+      SELECT
+        hd.shared_members                                           AS member_codes,
+        dt.name                                                     AS device_types
+      FROM household_devices hd
+      JOIN device_types dt
+        ON dt.id = hd.device_type_id
+      WHERE hd.router_id = e.router_id
+        AND hd.mac = NULLIF(
+              e.details -> 'device_details' ->> 'mac', ''
+            )::macaddr
+
+    ) reg ON true
+
+    ORDER BY e.timestamp DESC
   `
 })
 export class RouterEventsReport {
   @ViewColumn()
-  event_id!: number;
+  event_id!: string;          // UUID not integer
 
   @ViewColumn()
   router_id!: string;
 
   @ViewColumn()
-  hhid!: string;              // now non-nullable due to INNER JOIN
+  hhid!: string | null;       // nullable — LEFT JOIN households
 
   @ViewColumn()
   timestamp!: Date;
@@ -109,8 +107,8 @@ export class RouterEventsReport {
   duration_sec!: number | null;
 
   @ViewColumn()
-  member!: string | null;
+  member!: string | null;      // "M1, M2, M3, M4"
 
   @ViewColumn()
-  device_type!: string | null;
+  device_type!: string | null; // "Smartphone, Laptop, Smart TV"
 }
