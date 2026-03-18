@@ -41,24 +41,26 @@ import { ViewEntity, ViewColumn } from "typeorm";
     LEFT JOIN households h
       ON h.id = r.household_id
 
+    -- MAC-based lookup: returns exactly what was registered for that device
     LEFT JOIN LATERAL (
 
+      -- Personal device: single member (M1, M2 etc.)
       SELECT
-        STRING_AGG(m.member_code, ', ' ORDER BY m.member_code)     AS member_codes,
-        STRING_AGG(dt.name,       ', ' ORDER BY m.member_code)     AS device_types
-      FROM member_registration mr
+        m.member_code                                               AS member_codes,
+        dt.name                                                     AS device_types
+      FROM member_devices md
       JOIN members m
-        ON m.id = mr.member_id
-      JOIN member_devices md
-        ON md.member_id = m.id
-       AND md.router_id = e.router_id
+        ON m.id = md.member_id
       JOIN device_types dt
         ON dt.id = md.device_type_id
-      WHERE mr.router_id = e.router_id
-        AND mr.registered_at <= to_timestamp(e.timestamp)
+      WHERE md.router_id = e.router_id
+        AND md.mac = NULLIF(
+              e.details -> 'device_details' ->> 'mac', ''
+            )::macaddr
 
       UNION ALL
 
+      -- Shared device: multiple members (M1,M2,M3,M4 stored as-is)
       SELECT
         hd.shared_members                                           AS member_codes,
         dt.name                                                     AS device_types
@@ -77,13 +79,13 @@ import { ViewEntity, ViewColumn } from "typeorm";
 })
 export class RouterEventsReport {
   @ViewColumn()
-  event_id!: string;          // UUID not integer
+  event_id!: string;
 
   @ViewColumn()
   router_id!: string;
 
   @ViewColumn()
-  hhid!: string | null;       // nullable — LEFT JOIN households
+  hhid!: string | null;
 
   @ViewColumn()
   timestamp!: Date;
@@ -107,8 +109,8 @@ export class RouterEventsReport {
   duration_sec!: number | null;
 
   @ViewColumn()
-  member!: string | null;      // "M1, M2, M3, M4"
+  member!: string | null;
 
   @ViewColumn()
-  device_type!: string | null; // "Smartphone, Laptop, Smart TV"
+  device_type!: string | null;
 }
