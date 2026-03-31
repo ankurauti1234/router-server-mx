@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { getRouterEvents } from "../services/routerEvents.service.js";
 import { streamRouterEventsReport } from "../services/routerEventsReport.service.js";
+import { FilterParams } from "../services/routerEvents.service.js";
 
 const router = Router();
 
@@ -9,7 +10,23 @@ router.get("/router-events", async (req, res) => {
   try {
     const page  = req.query.page  ? Math.max(1, Number(req.query.page))    : 1;
     const limit = req.query.limit ? Math.min(100, Number(req.query.limit)) : 10;
-    const result = await getRouterEvents(page, limit);
+
+    // ── Parse filters ─────────────────────────────────────────
+    const filters: FilterParams = {};
+
+    if (req.query.routerId) {
+      filters.routerId = String(req.query.routerId);
+    }
+    if (req.query.startDate) {
+      const d = new Date(String(req.query.startDate));
+      if (!isNaN(d.getTime())) filters.startDate = d;
+    }
+    if (req.query.endDate) {
+      const d = new Date(String(req.query.endDate));
+      if (!isNaN(d.getTime())) filters.endDate = d;
+    }
+
+    const result = await getRouterEvents(page, limit, filters);
     res.json(result);
   } catch (err) {
     console.error(err);
