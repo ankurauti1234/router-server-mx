@@ -2,6 +2,10 @@ import { Router } from "express";
 import { getRouterEvents } from "../services/routerEvents.service.js";
 import { streamRouterEventsReport } from "../services/routerEventsReport.service.js";
 import { FilterParams } from "../services/routerEvents.service.js";
+import { getRouterStatuses } from "../services/routerStatus.service.js";
+import { RouterEventsReport } from "../entities/routerEvent.js";
+import { dataSource } from "../config/dataSource.js";
+
 
 const router = Router();
 
@@ -74,6 +78,86 @@ router.get("/report/stream", async (req, res) => {
     } else {
       res.end();
     }
+  }
+});
+
+// GET /api/router-events/status
+router.get("/status", async (req, res) => {
+  try {
+    const statuses = await getRouterStatuses();
+    res.json(statuses);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch router statuses" });
+  }
+});
+
+// GET /api/router-events/sessions-data
+router.get("/sessions-data", async (req, res) => {
+  try {
+    const { startDate, endDate, routerId } = req.query;
+
+    // Hard ceiling — never go back more than 48 hours
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const qb = dataSource
+      .getRepository(RouterEventsReport)
+      .createQueryBuilder("rer")
+      .select([
+        "rer.router_id",
+        "rer.hhid",
+        "rer.timestamp",
+        "rer.event",
+        "rer.hostname",
+        "rer.platform",
+        "rer.category",
+        "rer.duration_sec",
+        "rer.member",
+        "rer.device_type",
+        "rer.type_id",
+      ])
+      .orderBy("rer.timestamp", "ASC");
+
+    // Start date: use whatever the frontend sends, but never older than 48h
+    if (startDate) {
+      const requested = new Date(String(startDate));
+      // Pick whichever is MORE recent — requested or 48h ceiling
+      qb.andWhere("rer.timestamp >= :startDate", {
+        startDate: requested > fortyEightHoursAgo ? requested : fortyEightHoursAgo,
+      });
+    } else {
+      // No date sent → default to 48h window
+      qb.andWhere("rer.timestamp >= :startDate", {
+        startDate: fortyEightHoursAgo,
+      });
+    }
+
+    if (endDate) {
+      qb.andWhere("rer.timestamp <= :endDate", {
+        endDate: new Date(String(endDate)),
+      });
+    }
+
+    if (routerId) {
+      qb.andWhere("rer.router_id = :routerId", {
+        routerId: String(routerId).toUpperCase(),
+      });
+    }
+
+    // Safety cap — even within 48h, don't return more than 5000 rows
+    qb.take(5000);
+
+    const data = await qb.getMany();
+
+    console.log(
+      `[Sessions] Returning ${data.length} events | ` +
+      `window: ${startDate ?? "48h ago"} → ${endDate ?? "now"}`
+    );
+
+    res.json(data);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch session data" });
   }
 });
 
