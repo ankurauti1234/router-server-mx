@@ -15,7 +15,6 @@ export const streamRouterEventsReport = async (
 ): Promise<void> => {
   const db = dataSource;
 
-  // ── WHERE clauses ────────────────────────────────────────────────────────
   const conditions: string[] = ["et.code IN (0, 1, 10, 30)"];
   const params: (string | Date)[] = [];
   let paramIdx = 1;
@@ -37,7 +36,6 @@ export const streamRouterEventsReport = async (
     ? "WHERE " + conditions.join(" AND ")
     : "";
 
-  // ── CSV header — must match SELECT aliases below exactly ─────────────────
   const CSV_HEADER =
     "event_id,router_id,hhid,timestamp,type,event," +
     "hostname,platform,category,domain,ip,mac," +
@@ -51,67 +49,67 @@ export const streamRouterEventsReport = async (
   );
   res.write(CSV_HEADER);
 
-  // ── Paginate ─────────────────────────────────────────────────────────────
   let offset = 0;
   let hasMore = true;
 
   while (hasMore) {
     const sql = `
       SELECT
-        e.id                                                            AS event_id,
-        r.router_serial                                                 AS router_id,
-        h.hh_id                                                         AS hhid,
+        e.id AS event_id,
+        r.router_serial AS router_id,
+        h.hh_id AS hhid,
 
-        -- UTC timestamp formatted for CSV
         to_char(
           to_timestamp(e.timestamp) AT TIME ZONE 'UTC',
           'YYYY-MM-DD"T"HH24:MI:SS"Z"'
-        )                                                               AS timestamp,
+        ) AS timestamp,
 
-        et.code                                                         AS type,
+        et.code AS type,
+        et.name AS event,
 
-        et.name                                                         AS event,
+        e.details -> 'device_details'  ->> 'hostname' AS hostname,
+        e.details -> 'domain_activity' ->> 'platform' AS platform,
+        e.details -> 'domain_activity' ->> 'category' AS category,
+        e.details -> 'domain_activity' ->> 'domain'   AS domain,
 
-        e.details -> 'device_details'  ->> 'hostname'                  AS hostname,
-        e.details -> 'domain_activity' ->> 'platform'                  AS platform,
-        e.details -> 'domain_activity' ->> 'category'                  AS category,
-        e.details -> 'domain_activity' ->> 'domain'                    AS domain,
+        -- ✅ FIXED IP
+        CASE 
+          WHEN et.code = 10 THEN e.details -> 'device_details' ->> 'ip'
+          WHEN et.code = 30 THEN e.details -> 'member_details' -> 0 ->> 'ip'
+        END AS ip,
 
-        CASE WHEN et.code = 10
-          THEN e.details -> 'device_details' ->> 'ip'
-        END                                                             AS ip,
-
-        CASE WHEN et.code = 10
-          THEN (e.details -> 'device_details' ->> 'mac')
-        END                                                             AS mac,
+        -- ✅ FIXED MAC
+        CASE 
+          WHEN et.code = 10 THEN e.details -> 'device_details' ->> 'mac'
+          WHEN et.code = 30 THEN e.details -> 'member_details' -> 0 ->> 'mac'
+        END AS mac,
 
         CASE WHEN et.code = 10
           THEN e.details -> 'domain_activity' ->> 'service_category'
-        END                                                             AS service_category,
+        END AS service_category,
 
         CASE WHEN et.code = 0
           THEN (e.details -> 'device_details' ->> 'connected_duration_sec')::integer
-        END                                                             AS duration_sec,
+        END AS duration_sec,
 
-        reg.member_codes                                                AS member,
-        reg.device_types                                                AS device_type,
-        reg.user_device_id                                              AS user_device_id,
+        reg.member_codes,
+        reg.device_types,
+        reg.user_device_id,
 
-        -- Mexico City local timestamp formatted for CSV
         TO_CHAR(
           to_timestamp(e.timestamp) AT TIME ZONE 'America/Mexico_City',
           'DD-MM-YYYY HH24:MI:SS'
-        )                                                               AS timestamp_converted,
+        ) AS timestamp_converted,
 
         TO_CHAR(
           to_timestamp(e.timestamp) AT TIME ZONE 'America/Mexico_City',
           'DD-MM-YYYY'
-        )                                                               AS date,
+        ) AS date,
 
         TO_CHAR(
           to_timestamp(e.timestamp) AT TIME ZONE 'America/Mexico_City',
           'HH24:MI:SS'
-        )                                                               AS time
+        ) AS time
 
       FROM router_events e
 
@@ -132,10 +130,15 @@ export const streamRouterEventsReport = async (
           dt.name       AS device_types,
           md.id         AS user_device_id
         FROM member_devices md
-        JOIN members      m  ON m.id  = md.member_id
+        JOIN members m ON m.id = md.member_id
         JOIN device_types dt ON dt.id = md.device_type_id
         WHERE md.router_id = e.router_id
-          AND md.mac = NULLIF(e.details -> 'device_details' ->> 'mac', '')::macaddr
+          AND md.mac = NULLIF(
+            COALESCE(
+              e.details -> 'device_details' ->> 'mac',
+              e.details -> 'member_details' -> 0 ->> 'mac'
+            ), ''
+          )::macaddr
 
         UNION ALL
 
@@ -147,7 +150,12 @@ export const streamRouterEventsReport = async (
         FROM household_devices hd
         JOIN device_types dt ON dt.id = hd.device_type_id
         WHERE hd.router_id = e.router_id
-          AND hd.mac = NULLIF(e.details -> 'device_details' ->> 'mac', '')::macaddr
+          AND hd.mac = NULLIF(
+            COALESCE(
+              e.details -> 'device_details' ->> 'mac',
+              e.details -> 'member_details' -> 0 ->> 'mac'
+            ), ''
+          )::macaddr
       ) reg ON true
 
       ${whereClause}
@@ -163,31 +171,30 @@ export const streamRouterEventsReport = async (
       break;
     }
 
-    // ── Map rows → CSV lines ──────────────────────────────────────────────
     const csvChunk =
       rows
         .map((row) =>
           [
-            row.event_id              ?? "",
-            row.router_id             ?? "",
-            row.hhid                  ?? "",
-            row.timestamp             ?? "",
-            row.type                  ?? "",
+            row.event_id ?? "",
+            row.router_id ?? "",
+            row.hhid ?? "",
+            row.timestamp ?? "",
+            row.type ?? "",
             csvEscape(row.event),
             csvEscape(row.hostname),
             csvEscape(row.platform),
             csvEscape(row.category),
             csvEscape(row.domain),
-            row.ip                    ?? "",
-            row.mac                   ?? "",
+            row.ip ?? "",
+            row.mac ?? "",
             csvEscape(row.service_category),
-            row.duration_sec          ?? "",
-            csvEscape(row.member),
-            csvEscape(row.device_type),
-            row.user_device_id        ?? "",
-            row.timestamp_converted   ?? "",
-            row.date                  ?? "",
-            row.time                  ?? "",
+            row.duration_sec ?? "",
+            csvEscape(row.member_codes),
+            csvEscape(row.device_types),
+            row.user_device_id ?? "",
+            row.timestamp_converted ?? "",
+            row.date ?? "",
+            row.time ?? "",
           ].join(",")
         )
         .join("\n") + "\n";
