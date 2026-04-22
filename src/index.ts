@@ -4,6 +4,7 @@ import { initializeDataSource } from "./config/dataSource.js";
 import authRouter from "./routes/auth.routes.js";
 import routerEventRoutes from "./routes/routerEvent.routes.js";
 import cookieParser from 'cookie-parser'
+import { authenticate } from "./middleware/authMiddleware.js";
 
 const app = express();
 app.use(cookieParser());
@@ -23,7 +24,7 @@ app.use(
 app.use(express.json());
 
 app.use("/api/auth", authRouter);
-app.use("/api/router-events", routerEventRoutes);
+app.use("/api/router-events", authenticate, routerEventRoutes);
 
 const PORT = process.env.PORT || 4000;
 
