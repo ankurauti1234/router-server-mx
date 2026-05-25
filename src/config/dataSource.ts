@@ -18,7 +18,7 @@ export const dataSource = new DataSource({
   password: env.db.password,
   database: env.db.database,
   entities: [User,  RouterEventsReport],
-  synchronize: true,
+  synchronize: false,
   logging: env.nodeEnv !== "production",
   ssl: {
     ca: fs.readFileSync("global-bundle.pem").toString(),

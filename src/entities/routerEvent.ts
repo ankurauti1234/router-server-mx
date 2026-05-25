@@ -2,7 +2,7 @@ import { ViewEntity, ViewColumn } from "typeorm";
 
 @ViewEntity({
   name: "router_events_report",
-  materialized: false,
+  materialized: true,
   expression: `
     SELECT
       e.id                                                          AS event_id,
