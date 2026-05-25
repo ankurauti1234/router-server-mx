@@ -72,11 +72,32 @@ export const login = async (req: Request, res: Response) => {
   }
 };
 
+export const me = async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user;
+    if (!user) return res.status(401).json({ message: "Unauthorized" });
+
+    const found = await userRepo.findOne({
+      where: { id: user.id },
+      select: ["id", "name", "email", "created_at"],
+    });
+
+    if (!found) return res.status(404).json({ message: "User not found" });
+
+    res.json(found);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 export const logout = (req: Request, res: Response) => {
+  const isProduction = process.env.NODE_ENV === "production";
+
+  // Options must exactly match what was used when setting the cookie in login
   res.clearCookie("auth-session", {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "none",
+    secure: isProduction,
+    sameSite: isProduction ? "none" : "lax",
     path: "/"
   });
 

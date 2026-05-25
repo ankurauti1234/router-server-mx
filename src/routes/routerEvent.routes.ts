@@ -104,6 +104,7 @@ router.get("/sessions-data", async (req, res) => {
       .getRepository(RouterEventsReport)
       .createQueryBuilder("rer")
       .select([
+        "rer.event_id",
         "rer.router_id",
         "rer.hhid",
         "rer.timestamp",

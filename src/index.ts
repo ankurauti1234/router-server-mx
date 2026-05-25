@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { initializeDataSource } from "./config/dataSource.js";
+import { dataSource, initializeDataSource } from "./config/dataSource.js";
 import authRouter from "./routes/auth.routes.js";
 import routerEventRoutes from "./routes/routerEvent.routes.js";
 import cookieParser from 'cookie-parser'
@@ -31,6 +31,17 @@ initializeDataSource()
   .then(() => {
     console.log("Database connected successfully");
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+    // ── Refresh materialized view every 5 minutes ──────────────
+    setInterval(async () => {
+      try {
+        await dataSource.query(`REFRESH MATERIALIZED VIEW CONCURRENTLY router_events_report`);
+        console.log("[MV] Refreshed router_events_report");
+      } catch (err) {
+        console.error("[MV] Refresh failed:", err);
+      }
+    }, 5 * 60 * 1000);
+    // ───────────────────────────────────────────────────────────
   })
   .catch((err) => {
     console.error("Failed to initialize DB:", err);
