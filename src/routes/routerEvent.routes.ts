@@ -7,9 +7,15 @@ import { RouterEventsReport } from "../entities/routerEvent.js";
 import { dataSource } from "../config/dataSource.js";
 import { getDbHost, getDbPort } from "../config/dbTunnel.js";
 import { env } from "../config/env.js";
+import { fileURLToPath } from "url";
+import path from "path";
 import pg from "pg";
 import fs from "fs";
 import type { Response } from "express";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const caPath = path.resolve(__dirname, "../../global-bundle.pem");
 
 const router = Router();
 
@@ -24,7 +30,7 @@ const pgListener = new pg.Client({
   user:     env.db.username,
   password: env.db.password,
   ssl: {
-    ca: fs.readFileSync("global-bundle.pem").toString(),
+    ca: fs.readFileSync(caPath).toString(),
     rejectUnauthorized: env.nodeEnv !== "development",
   },
 });
