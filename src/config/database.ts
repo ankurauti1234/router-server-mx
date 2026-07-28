@@ -2,11 +2,15 @@ import "reflect-metadata";
 import { DataSource, DataSourceOptions } from "typeorm";
 import { env } from "./env.js";
 import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 import { getDbHost, getDbPort } from "./dbTunnel.js";
 import { User } from "../entities/user.entities.js";
 import { RouterEventsReport } from "../entities/routerEvent.js";
 
-
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const caPath = path.resolve(__dirname, "../../global-bundle.pem");
 
 const isDev = env.nodeEnv === "development";
 
@@ -25,7 +29,7 @@ const baseConfig: DataSourceOptions = {
     : ["dist/migrations/**/*.js"],
 
   ssl: {
-    ca: fs.readFileSync("global-bundle.pem").toString(),
+    ca: fs.readFileSync(caPath).toString(),
     rejectUnauthorized: !isDev,
   },
 

@@ -1,7 +1,11 @@
-// src/config/dbTunnel.ts
 import { createTunnel } from "tunnel-ssh";
 import fs from "fs";
+import { fileURLToPath } from "url";
+import path from "path";
 import { env } from "./env.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let tunnelServer: any = null;
 let sshClient: any = null;
@@ -12,7 +16,13 @@ export async function createDbTunnel(): Promise<void> {
     return;
   }
 
-  const privateKey = fs.readFileSync(env.ssh.keyPath);
+  let keyPath = env.ssh.keyPath;
+  if (keyPath.startsWith("./") || !path.isAbsolute(keyPath)) {
+    const projectRoot = path.resolve(__dirname, "../../");
+    keyPath = path.join(projectRoot, keyPath);
+  }
+
+  const privateKey = fs.readFileSync(keyPath);
 
   const tunnelOptions = {
     autoClose: false,
