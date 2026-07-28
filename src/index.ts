@@ -12,7 +12,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:3000",
-      "https://router-mexico.indirex.io"
+      "https://router.indirex.io"
     ],          // ← your frontend URL
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // usually enough
     allowedHeaders: ["Content-Type", "Authorization"],
